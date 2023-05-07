@@ -26,7 +26,7 @@ int main(int argc , char *argv[]) {
     }
 
     if (strlen(argv[1]) > 10) {
-        fprintf(stderr, "ID trebuie sa fie maxim 10 caractere \n");
+        fprintf(stderr, "The ID must be a maximum of 10 characters \n");
         return 0;
     }
 
@@ -43,12 +43,6 @@ int main(int argc , char *argv[]) {
     int connect_ret = connect(sock, (struct sockaddr *)adr_sv, sizeof(struct sockaddr_in));
     DIE(connect_ret < 0, "connect");
 
-    fd_set inFDS , outFDS;
-    FD_ZERO(&inFDS);
-    FD_ZERO(&outFDS);
-
-    FD_SET(STDIN_FILENO, &inFDS);
-    FD_SET(sock, &inFDS);
     int send_ret = send(sock, argv[1], strlen(argv[1]), 0);
     DIE(send_ret < 0, "send");
 
@@ -77,8 +71,8 @@ int main(int argc , char *argv[]) {
                 udp_msg* msg = (udp_msg*)calloc(1,sizeof(udp_msg));
                     
                 memcpy(msg->topic , msg_recv , 50);
-                memcpy(&msg->type , msg_recv+50 , 1);
-                memcpy(msg->content , msg_recv+51 , 1500);
+                memcpy(&msg->type , msg_recv + 50 , 1);
+                memcpy(msg->content , msg_recv + 51 , 1500);
 
                 switch ((int)msg->type) {
                     case 0:
@@ -154,7 +148,6 @@ int main(int argc , char *argv[]) {
 
         } else if (fds[1].revents & POLLIN) {
 
-            outFDS = inFDS;
             char* buff = (char*)calloc(256 , sizeof(char));
             fgets(buff, 255, stdin);
 

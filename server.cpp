@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <sstream>
 #include <math.h>
+#include <vector>
 
 
 #define MAX_NO_CLIENTS 10
@@ -21,6 +22,8 @@ using namespace std;
 struct client{
     char id[10];
     unordered_map<string , int> topic_sf;
+    vector<char*> msg_to_send;
+    int no_of_unsent_msg;
 };
 
 struct udp_msg {
@@ -31,13 +34,28 @@ struct udp_msg {
 
 
 void send_to_client( client subs[10] , int subs_no , char *msg , unordered_map<string , bool> online , unordered_map<string , int> all_time_users) {
+    
+    udp_msg* m = (udp_msg*)calloc(1,sizeof(udp_msg));
+                    
+    memcpy(m->topic , msg , 50);
+    memcpy(&m->type , msg+50 , 1);
+    memcpy(m->content , msg+51 , 1500);
+
     for (int i = 0; i < subs_no; i++)
     {
         if (online.find(subs[i].id)->second) {
-            int sock = all_time_users.find(subs[i].id)->second;
-            int send_ret = send(sock, msg, 1600, 0);
-            DIE(send_ret < 0, "exit");
-            // cout << "trimis" << endl;
+
+            if (subs[i].topic_sf.count(m->topic) >= 1) {
+                int sock = all_time_users.find(subs[i].id)->second;
+                int send_ret = send(sock, msg, 1600, 0);
+                DIE(send_ret < 0, "exit");
+            }
+        } else {
+
+            if (subs[i].topic_sf.count(m->topic) >= 1 && subs[i].topic_sf.find(m->topic)->second) {
+                subs[i].msg_to_send.push_back(msg);
+                subs[i].no_of_unsent_msg++;
+            }
         }
     }
 }
@@ -123,8 +141,6 @@ int main(int argc , char *argv[]) {
                         }
                         
                     return 0;
-                    } else {
-                        printf("Serverul va accepta, de la tastatura, doar comanda exit\n");
                     }
 
                 } else if (fds[i].fd == TCP_socket) {
@@ -147,6 +163,7 @@ int main(int argc , char *argv[]) {
                         active_users_socket_id.insert(make_pair(new_sock_tcp , buff));
                         online_users.insert(make_pair(buff , true));
                         strcpy(subs_vect[no_of_subs].id , buff);
+                        subs_vect[no_of_subs].no_of_unsent_msg = 0;
                         no_of_subs++;
                         
                         cout << "New client " << buff << " connected from " << inet_ntoa(c_addr.sin_addr) << ":" <<  htons(c_addr.sin_port) << endl;
@@ -159,6 +176,23 @@ int main(int argc , char *argv[]) {
                             active_users_socket_id[all_time_users[buff]] = buff;
                             active_users_id_socket[buff] = new_sock_tcp;
                             online_users[buff] = true;
+
+                            for (int i = 0; i < no_of_subs; i++)
+                            {
+                                if (!strcmp(subs_vect[i].id , buff)) {
+                                    if (subs_vect[i].no_of_unsent_msg != 0) {
+                                        for (int j = 0; j < subs_vect[i].no_of_unsent_msg; j++)
+                                        {
+                                            char *msg = (char*)calloc(1600 , sizeof(char));
+                                            memcpy(msg , subs_vect[i].msg_to_send.front() , 1600);
+                                            subs_vect[i].msg_to_send.erase(subs_vect[i].msg_to_send.begin());
+                                            send(new_sock_tcp, msg, 1600, 0);
+                                        }
+                                    }
+                                }
+                            }
+                            
+
                             cout << "New client " << buff << " connected from " << inet_ntoa(c_addr.sin_addr) << ":" <<  htons(c_addr.sin_port) << endl;
                         }
                     }
@@ -171,85 +205,8 @@ int main(int argc , char *argv[]) {
                     socklen_t socklen = sizeof(struct sockaddr);
                     int n = recvfrom(UDP_socket , buff , 1600 , 0 , (struct sockaddr *)&adr_cli, &socklen);
                     DIE(n < 0, "recv");
-
-                    // udp_msg* msg = (udp_msg*)calloc(1,sizeof(udp_msg));
-                    
-                    // memcpy(msg->topic , buff , 50);
-                    // memcpy(&msg->type , buff+50 , 1);
-                    // memcpy(msg->content , buff+51 , 1500);
-
                     send_to_client(subs_vect , no_of_subs , buff , online_users , all_time_users);
 
-                    // switch ((int)msg->type) {
-                    // case 0:
-
-                    //     if ((*(uint8_t *)msg->content) == 0) {
-                    //         string snd = string(inet_ntoa(adr_cli.sin_addr)) + string(":") + to_string(htons(adr_cli.sin_port)) + string(" - ") 
-                    //         + msg->topic + string(" - ") + string("INT - ") + to_string(ntohl(*(uint32_t*)(msg->content+1)));
-                    //         send_to_client(subs_vect , no_of_subs , buff , online_users , all_time_users);
-                    //     } else {
-                    //         string snd = string(inet_ntoa(adr_cli.sin_addr)) + string(":") + to_string(htons(adr_cli.sin_port)) + string(" - ") 
-                    //         + msg->topic + string(" - ") + string("INT - -") + to_string(ntohl(*(uint32_t*)(msg->content+1)));
-                    //     }
-                    //     break;
-                    // case 1:
-                    //     if (to_string(ntohs(*(uint16_t*)(msg->content)) % 100).length() == 1) {
-                    //         string snd = string(inet_ntoa(adr_cli.sin_addr)) + string(":") + to_string(htons(adr_cli.sin_port)) + string(" - ") 
-                    //         + msg->topic + string(" - ") + string("SHORT_REAL - ") + to_string(ntohs(*(uint16_t*)(msg->content))/100)
-                    //         + string(".0") + to_string(ntohs(*(uint16_t*)(msg->content)) % 100);
-                    //     } else {
-                    //         string snd = string(inet_ntoa(adr_cli.sin_addr)) + string(":") + to_string(htons(adr_cli.sin_port)) + string(" - ") 
-                    //         + msg->topic + string(" - ") + string("SHORT_REAL - ") + to_string(ntohs(*(uint16_t*)(msg->content))/100)
-                    //         + string(".") + to_string(ntohs(*(uint16_t*)(msg->content)) % 100);
-                    //     }
-                    //     break;
-                    // case 2:
-                    
-                    //     if ((*(uint8_t *)msg->content) == 0) {
-                    //         uint8_t power = (*(uint8_t *)(msg->content + sizeof(uint8_t) + sizeof(uint32_t)));
-                    //         uint32_t no = ntohl(*(uint32_t *)(msg->content + sizeof(uint8_t)));
-                    //         int aux = pow(10 , power);
-                    //         if (to_string(no % aux).length() < power) {
-                    //             string decimal = to_string(no % aux);
-                    //             for (int i = to_string(no % aux).length(); i < power; i++)
-                    //             {
-                    //                 decimal = "0" + decimal;
-                    //             }
-                    //             string snd =  string(inet_ntoa(adr_cli.sin_addr)) + string(":") + to_string(htons(adr_cli.sin_port)) + string(" - ") 
-                    //             + msg->topic + string(" - ") + string("FLOAT - ") + to_string(no / aux)
-                    //             + string(".") + decimal;
-                    //         } else {
-                    //             string snd = string(inet_ntoa(adr_cli.sin_addr)) + string(":") + to_string(htons(adr_cli.sin_port)) + string(" - ") 
-                    //             + msg->topic + string(" - ") + string("FLOAT - ") + to_string(no / aux)
-                    //             + string(".") + to_string(no % aux);
-                    //         }
-
-                    //     } else {
-                    //         uint8_t power = (*(uint8_t *)(msg->content + sizeof(uint8_t) + sizeof(uint32_t)));
-                    //         uint32_t no = ntohl(*(uint32_t *)(msg->content + sizeof(uint8_t)));
-                    //         int aux = pow(10 , power);
-                    //         if (to_string(no % aux).length() < power) {
-                    //             string decimal = to_string(no % aux);
-                    //             for (int i = to_string(no % aux).length(); i < power; i++)
-                    //             {
-                    //                 decimal = "0" + decimal;
-                    //             }
-                    //             string snd = string(inet_ntoa(adr_cli.sin_addr)) + string(":") + to_string(htons(adr_cli.sin_port)) + string(" - ") 
-                    //             + msg->topic + string(" - ") + string("FLOAT - -") + to_string(no / aux)
-                    //             + string(".") + decimal;
-                    //         } else {
-                    //             string snd = string(inet_ntoa(adr_cli.sin_addr)) + string(":") + to_string(htons(adr_cli.sin_port)) + string(" - ") 
-                    //             + msg->topic + string(" - ") + string("FLOAT - -") + to_string(no / aux)
-                    //             + string(".") + to_string(no % aux);
-                    //         }
-                    //     }
-                    //     break;
-
-                    // default:
-                    //     string snd = string(inet_ntoa(adr_cli.sin_addr)) + string(":") + to_string(htons(adr_cli.sin_port)) + string(" - ") 
-                    //     + msg->topic + string(" - ") + string("STRING - ") + msg->content;
-                    //     break;
-                    // }
                 } else {
                     memset(buff, 0, 256);
                     int ret = recv(fds[i].fd, buff, 256, 0);

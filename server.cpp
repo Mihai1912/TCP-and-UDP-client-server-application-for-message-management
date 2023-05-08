@@ -162,8 +162,7 @@ void run_sv(int TCP_socket , int UDP_socket){
                         close(TCP_socket);
                         close(UDP_socket);
 
-                        for (int i = 0; i < sock_no; i++)
-                        {
+                        for (int i = 0; i < sock_no; i++) {
                             close(fds[i].fd);
                         }
                     return;
@@ -176,6 +175,7 @@ void run_sv(int TCP_socket , int UDP_socket){
                     socklen_t clen = sizeof(struct sockaddr_in); 
                     new_sock_tcp = accept(TCP_socket, (struct sockaddr *)&c_addr, &clen);
                     DIE(new_sock_tcp < 0, "accept");
+
                     int enable = 1;
                     setsockopt(new_sock_tcp, SOL_SOCKET, TCP_NODELAY, &enable, sizeof(int)) ;
 
@@ -283,6 +283,8 @@ void run_sv(int TCP_socket , int UDP_socket){
 
 
 int main(int argc , char *argv[]) {
+
+    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
 
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <PORT_DORIT>\n", argv[0]);

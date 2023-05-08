@@ -142,6 +142,7 @@ void run_sub(int sock) {
             int rc = recv(sock, msg_recv, 1600 , 0);
             // primeste 0 octeti adica serverul s-a inchis
             if (rc <= 0) {
+                close(sock);
                 return;
             } 
             // primeste mai multe de 1600 de octeti adica a primit mesajul trimis de catre clientul UDP la server
@@ -220,6 +221,8 @@ void run_sub(int sock) {
 }
 
 int main(int argc , char *argv[]) {
+
+    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
 
     if (argc != 4) {
         fprintf(stderr, "Usage: %s <ID_CLIENT> <IP_Server> <Port_Server>\n",argv[0]);

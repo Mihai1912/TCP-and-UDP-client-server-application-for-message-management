@@ -9,6 +9,8 @@
 #include <sstream>
 #include <poll.h>
 #include <math.h>
+#include <netinet/tcp.h>
+
 
 using namespace std;
 
@@ -18,18 +20,7 @@ struct udp_msg {
     char content[1500];
 };
 
-int main(int argc , char *argv[]) {
-
-    if (argc != 4) {
-        fprintf(stderr, "Usage: %s <ID_CLIENT> <IP_Server> <Port_Server>\n",argv[0]);
-        return 0;
-    }
-
-    if (strlen(argv[1]) > 10) {
-        fprintf(stderr, "The ID must be a maximum of 10 characters \n");
-        return 0;
-    }
-
+int init_socket_TCP (char **argv) {
     int port_number = atoi(argv[3]);
 
     struct sockaddr_in *adr_sv = (struct sockaddr_in*)calloc(1 , sizeof(struct sockaddr_in));
@@ -40,12 +31,96 @@ int main(int argc , char *argv[]) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     DIE(sock < 0, "socket");
 
+    int enable = 1;
+    setsockopt(sock, SOL_SOCKET, TCP_NODELAY, &enable, sizeof(int)) ;
+
     int connect_ret = connect(sock, (struct sockaddr *)adr_sv, sizeof(struct sockaddr_in));
     DIE(connect_ret < 0, "connect");
 
     int send_ret = send(sock, argv[1], strlen(argv[1]), 0);
     DIE(send_ret < 0, "send");
+    
+    return sock;
+}
 
+void print_INT (udp_msg *msg) {
+    // INT pozitiv
+    if ((*(uint8_t *)msg->content) == 0) {
+        string snd = msg->topic + string(" - ") + string("INT - ") + to_string(ntohl(*(uint32_t*)(msg->content+1)));
+        cout << snd << endl;
+    } 
+    // INT negativ
+    else {
+        string snd = msg->topic + string(" - ") + string("INT - -") + to_string(ntohl(*(uint32_t*)(msg->content+1)));
+        cout << snd << endl;
+    }
+} 
+
+void print_SHORT_REAL (udp_msg* msg) {
+    // completarea primei zecimale cu 0
+    if (to_string(ntohs(*(uint16_t*)(msg->content)) % 100).length() == 1) {
+        string snd = msg->topic + string(" - ") + string("SHORT_REAL - ") + to_string(ntohs(*(uint16_t*)(msg->content))/100)
+        + string(".0") + to_string(ntohs(*(uint16_t*)(msg->content)) % 100);
+        cout << snd << endl;
+    } else {
+        string snd =  msg->topic + string(" - ") + string("SHORT_REAL - ") + to_string(ntohs(*(uint16_t*)(msg->content))/100)
+        + string(".") + to_string(ntohs(*(uint16_t*)(msg->content)) % 100);
+        cout << snd << endl;
+    }
+}
+
+void print_FLOAT (udp_msg* msg) {
+    // FLOAT pozitiv
+    if ((*(uint8_t *)msg->content) == 0) {
+        uint8_t power = (*(uint8_t *)(msg->content + sizeof(uint8_t) + sizeof(uint32_t)));
+        uint32_t no = ntohl(*(uint32_t *)(msg->content + sizeof(uint8_t)));
+        int aux = pow(10 , power);
+        // completarea primelor (n - numarul zecimalelor numarului impartin la 10^n) zecimale cu 0 unde n este exponentul lui 10
+        if (to_string(no % aux).length() < power) {
+            string decimal = to_string(no % aux);
+            for (int i = to_string(no % aux).length(); i < power; i++)
+            {
+                decimal = "0" + decimal;
+            }
+            string snd =   msg->topic + string(" - ") + string("FLOAT - ") + to_string(no / aux)
+            + string(".") + decimal;
+            cout << snd << endl;
+        } else {
+            string snd = msg->topic + string(" - ") + string("FLOAT - ") + to_string(no / aux)
+            + string(".") + to_string(no % aux);
+            cout << snd << endl;
+        }
+
+    } 
+    // FLOAT negativ
+    else {
+        uint8_t power = (*(uint8_t *)(msg->content + sizeof(uint8_t) + sizeof(uint32_t)));
+        uint32_t no = ntohl(*(uint32_t *)(msg->content + sizeof(uint8_t)));
+        int aux = pow(10 , power);
+        // completarea primelor (n - numarul zecimalelor numarului impartin la 10^n) zecimale cu 0 unde n este exponentul lui 10
+        if (to_string(no % aux).length() < power) {
+            string decimal = to_string(no % aux);
+            for (int i = to_string(no % aux).length(); i < power; i++)
+            {
+                decimal = "0" + decimal;
+            }
+            string snd =  msg->topic + string(" - ") + string("FLOAT - -") + to_string(no / aux)
+            + string(".") + decimal;
+            cout << snd << endl;
+        } else {
+            string snd =  msg->topic + string(" - ") + string("FLOAT - -") + to_string(no / aux)
+            + string(".") + to_string(no % aux);
+            cout << snd << endl;
+        }
+    }
+}
+
+void print_STRING (udp_msg* msg) {
+    string snd =  msg->topic + string(" - ") + string("STRING - ") + msg->content;
+    cout << snd << endl;
+}
+
+void run_sub(int sock) {
     struct pollfd fds[2];
     fds[0].fd = sock;
     fds[0].events = POLLIN;
@@ -59,15 +134,18 @@ int main(int argc , char *argv[]) {
         int ready = poll(fds, 2, -1);
         DIE(ready < 0, "poll");
 
-
+        // TCP
         if (fds[0].revents & POLLIN) {
 
             memset(msg_recv , 0 , 1600);
 
             int rc = recv(sock, msg_recv, 1600 , 0);
+            // primeste 0 octeti adica serverul s-a inchis
             if (rc <= 0) {
-                return 0;
-            } else if (rc >= 1600) {
+                return;
+            } 
+            // primeste mai multe de 1600 de octeti adica a primit mesajul trimis de catre clientul UDP la server
+            else if (rc >= 1600) {
                 udp_msg* msg = (udp_msg*)calloc(1,sizeof(udp_msg));
                     
                 memcpy(msg->topic , msg_recv , 50);
@@ -76,77 +154,23 @@ int main(int argc , char *argv[]) {
 
                 switch ((int)msg->type) {
                     case 0:
-                        if ((*(uint8_t *)msg->content) == 0) {
-                            string snd = msg->topic + string(" - ") + string("INT - ") + to_string(ntohl(*(uint32_t*)(msg->content+1)));
-                            cout << snd << endl;
-                        } else {
-                            string snd = msg->topic + string(" - ") + string("INT - -") + to_string(ntohl(*(uint32_t*)(msg->content+1)));
-                            cout << snd << endl;
-                        }
+                        print_INT(msg);
                         break;
                     case 1:
-                        if (to_string(ntohs(*(uint16_t*)(msg->content)) % 100).length() == 1) {
-                            string snd = msg->topic + string(" - ") + string("SHORT_REAL - ") + to_string(ntohs(*(uint16_t*)(msg->content))/100)
-                            + string(".0") + to_string(ntohs(*(uint16_t*)(msg->content)) % 100);
-                            cout << snd << endl;
-                        } else {
-                            string snd =  msg->topic + string(" - ") + string("SHORT_REAL - ") + to_string(ntohs(*(uint16_t*)(msg->content))/100)
-                            + string(".") + to_string(ntohs(*(uint16_t*)(msg->content)) % 100);
-                            cout << snd << endl;
-                        }
+                        print_SHORT_REAL(msg);
                         break;
                     case 2:
-                    
-                        if ((*(uint8_t *)msg->content) == 0) {
-                            uint8_t power = (*(uint8_t *)(msg->content + sizeof(uint8_t) + sizeof(uint32_t)));
-                            uint32_t no = ntohl(*(uint32_t *)(msg->content + sizeof(uint8_t)));
-                            int aux = pow(10 , power);
-                            if (to_string(no % aux).length() < power) {
-                                string decimal = to_string(no % aux);
-                                for (int i = to_string(no % aux).length(); i < power; i++)
-                                {
-                                    decimal = "0" + decimal;
-                                }
-                                string snd =   msg->topic + string(" - ") + string("FLOAT - ") + to_string(no / aux)
-                                + string(".") + decimal;
-                                cout << snd << endl;
-                            } else {
-                                string snd = msg->topic + string(" - ") + string("FLOAT - ") + to_string(no / aux)
-                                + string(".") + to_string(no % aux);
-                                cout << snd << endl;
-                            }
-
-                        } else {
-                            uint8_t power = (*(uint8_t *)(msg->content + sizeof(uint8_t) + sizeof(uint32_t)));
-                            uint32_t no = ntohl(*(uint32_t *)(msg->content + sizeof(uint8_t)));
-                            int aux = pow(10 , power);
-                            if (to_string(no % aux).length() < power) {
-                                string decimal = to_string(no % aux);
-                                for (int i = to_string(no % aux).length(); i < power; i++)
-                                {
-                                    decimal = "0" + decimal;
-                                }
-                                string snd =  msg->topic + string(" - ") + string("FLOAT - -") + to_string(no / aux)
-                                + string(".") + decimal;
-                                cout << snd << endl;
-                            } else {
-                                string snd =  msg->topic + string(" - ") + string("FLOAT - -") + to_string(no / aux)
-                                + string(".") + to_string(no % aux);
-                                cout << snd << endl;
-                            }
-                        }
+                        print_FLOAT(msg);
                         break;
-
                     default:
-                        string snd =  msg->topic + string(" - ") + string("STRING - ") + msg->content;
-                        cout << snd << endl;
+                        print_STRING(msg);
                         break;
                     }
             }
 
-            
-
-        } else if (fds[1].revents & POLLIN) {
+        } 
+        // STDIN
+        else if (fds[1].revents & POLLIN) {
 
             char* buff = (char*)calloc(256 , sizeof(char));
             fgets(buff, 255, stdin);
@@ -155,7 +179,7 @@ int main(int argc , char *argv[]) {
                 int send_ret = send(sock, buff, 256, 0);
                 DIE(send_ret < 0, "exit");
                 close(sock);
-                return 0;
+                return;
             } 
             else if (!strncmp(buff , "subscribe" , 9)) {
 
@@ -193,5 +217,23 @@ int main(int argc , char *argv[]) {
         }
     }
     close(sock);
+}
+
+int main(int argc , char *argv[]) {
+
+    if (argc != 4) {
+        fprintf(stderr, "Usage: %s <ID_CLIENT> <IP_Server> <Port_Server>\n",argv[0]);
+        return 0;
+    }
+
+    if (strlen(argv[1]) > 10) {
+        fprintf(stderr, "The ID must be a maximum of 10 characters \n");
+        return 0;
+    }
+
+    int sock = init_socket_TCP(argv);
+
+    run_sub(sock);
+    
     return 0;
 }
